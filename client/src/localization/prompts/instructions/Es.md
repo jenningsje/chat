@@ -511,7 +511,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Delete chat?
   - **translated**: ¿Eliminar Chat?
 
-- **com_ui_delete_conversation_confirm**:
+- **com_ui_delete_confirm**:
   - **english**: This will delete
   - **translated**: Esto eliminará
 
@@ -1355,7 +1355,7 @@ Write a prompt that is mindful of the nuances in the language with respect to it
   - **english**: Uninstall
   - **translated**: Desinstalar
 
-- **com_nav_tool_add**:
+- **com_ui_add**:
   - **english**: Add
   - **translated**: Agregar
 
