@@ -1,7 +1,8 @@
-const Keyv = require('keyv');
+const { Keyv } = require('keyv');
 const crypto = require('crypto');
 const { CohereClient } = require('cohere-ai');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
+const { constructAzureURL, genAzureChatCompletion } = require('@librechat/api');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
   ImageDetail,
@@ -10,10 +11,9 @@ const {
   CohereConstants,
   mapModelToAzureConfig,
 } = require('librechat-data-provider');
-const { extractBaseURL, constructAzureURL, genAzureChatCompletion } = require('~/utils');
 const { createContextHandlers } = require('./prompts');
 const { createCoherePayload } = require('./llm');
-const { Agent, ProxyAgent } = require('undici');
+const { extractBaseURL } = require('~/utils');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -186,10 +186,6 @@ class ChatGPTClient extends BaseClient {
       headers: {
         'Content-Type': 'application/json',
       },
-      dispatcher: new Agent({
-        bodyTimeout: 0,
-        headersTimeout: 0,
-      }),
     };
 
     if (this.isVisionModel) {
@@ -227,6 +223,16 @@ class ChatGPTClient extends BaseClient {
       this.azure = !serverless && azureOptions;
       this.azureEndpoint =
         !serverless && genAzureChatCompletion(this.azure, modelOptions.model, this);
+      if (serverless === true) {
+        this.options.defaultQuery = azureOptions.azureOpenAIApiVersion
+          ? { 'api-version': azureOptions.azureOpenAIApiVersion }
+          : undefined;
+        this.options.headers['api-key'] = this.apiKey;
+      }
+    }
+
+    if (this.options.defaultQuery) {
+      opts.defaultQuery = this.options.defaultQuery;
     }
 
     if (this.options.headers) {
@@ -239,9 +245,9 @@ class ChatGPTClient extends BaseClient {
 
       baseURL = this.langchainProxy
         ? constructAzureURL({
-          baseURL: this.langchainProxy,
-          azureOptions: this.azure,
-        })
+            baseURL: this.langchainProxy,
+            azureOptions: this.azure,
+          })
         : this.azureEndpoint.split(/(?<!\/)\/(chat|completion)\//)[0];
 
       if (this.options.forcePrompt) {
@@ -263,10 +269,6 @@ class ChatGPTClient extends BaseClient {
     if (this.useOpenRouter) {
       opts.headers['HTTP-Referer'] = 'https://librechat.ai';
       opts.headers['X-Title'] = 'LibreChat';
-    }
-
-    if (this.options.proxy) {
-      opts.dispatcher = new ProxyAgent(this.options.proxy);
     }
 
     /* hacky fixes for Mistral AI API:
@@ -338,7 +340,6 @@ class ChatGPTClient extends BaseClient {
     opts.body = JSON.stringify(modelOptions);
 
     if (modelOptions.stream) {
-      // eslint-disable-next-line no-async-promise-executor
       return new Promise(async (resolve, reject) => {
         try {
           let done = false;
@@ -678,7 +679,6 @@ ${botMessage.message}
 
     const instructionsPayload = {
       role: 'system',
-      name: 'instructions',
       content: promptPrefix,
     };
 

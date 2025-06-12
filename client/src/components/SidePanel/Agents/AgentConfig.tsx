@@ -1,24 +1,24 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { QueryKeys, AgentCapabilities, EModelEndpoint, SystemRoles } from 'librechat-data-provider';
-import type { TConfig, TPlugin } from 'librechat-data-provider';
-import type { AgentForm, AgentPanelProps } from '~/common';
+import { QueryKeys, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
+import type { TPlugin } from 'librechat-data-provider';
+import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines, getEndpointField, getIconKey } from '~/utils';
-import { useCreateAgentMutation, useUpdateAgentMutation } from '~/data-provider';
 import { useToastContext, useFileMapContext } from '~/Providers';
-import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import Action from '~/components/SidePanel/Builder/Action';
 import { ToolSelectDialog } from '~/components/Tools';
-import { useLocalize, useAuthContext } from '~/hooks';
-import CapabilitiesForm from './CapabilitiesForm';
+import { icons } from '~/hooks/Endpoint/Icons';
 import { processAgentOption } from '~/utils';
-import { Spinner } from '~/components/svg';
-import DeleteButton from './DeleteButton';
+import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
+import FileContext from './FileContext';
+import SearchForm from './Search/Form';
+import { useLocalize } from '~/hooks';
 import FileSearch from './FileSearch';
-import ShareAgent from './ShareAgent';
+import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
+import CodeForm from './Code/Form';
 import { Panel } from '~/common';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
@@ -32,11 +32,10 @@ export default function AgentConfig({
   setAction,
   actions = [],
   agentsConfig,
-  endpointsConfig,
+  createMutation,
   setActivePanel,
-  setCurrentAgentId,
-}: AgentPanelProps & { agentsConfig?: TConfig | null }) {
-  const { user } = useAuthContext();
+  endpointsConfig,
+}: AgentPanelProps) {
   const fileMap = useFileMapContext();
   const queryClient = useQueryClient();
 
@@ -56,21 +55,53 @@ export default function AgentConfig({
   const agent_id = useWatch({ control, name: 'id' });
 
   const toolsEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.tools),
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.tools) ?? false,
     [agentsConfig],
   );
   const actionsEnabled = useMemo(
-    () => agentsConfig?.capabilities?.includes(AgentCapabilities.actions),
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.actions) ?? false,
+    [agentsConfig],
+  );
+  const artifactsEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.artifacts) ?? false,
+    [agentsConfig],
+  );
+  const ocrEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.ocr) ?? false,
     [agentsConfig],
   );
   const fileSearchEnabled = useMemo(
     () => agentsConfig?.capabilities?.includes(AgentCapabilities.file_search) ?? false,
     [agentsConfig],
   );
+  const webSearchEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.web_search) ?? false,
+    [agentsConfig],
+  );
   const codeEnabled = useMemo(
     () => agentsConfig?.capabilities?.includes(AgentCapabilities.execute_code) ?? false,
     [agentsConfig],
   );
+
+  const context_files = useMemo(() => {
+    if (typeof agent === 'string') {
+      return [];
+    }
+
+    if (agent?.id !== agent_id) {
+      return [];
+    }
+
+    if (agent.context_files) {
+      return agent.context_files;
+    }
+
+    const _agent = processAgentOption({
+      agent,
+      fileMap,
+    });
+    return _agent.context_files ?? [];
+  }, [agent, agent_id, fileMap]);
 
   const knowledge_files = useMemo(() => {
     if (typeof agent === 'string') {
@@ -92,45 +123,25 @@ export default function AgentConfig({
     return _agent.knowledge_files ?? [];
   }, [agent, agent_id, fileMap]);
 
-  /* Mutations */
-  const update = useUpdateAgentMutation({
-    onSuccess: (data) => {
-      showToast({
-        message: `${localize('com_assistants_update_success')} ${
-          data.name ?? localize('com_ui_agent')
-        }`,
-      });
-    },
-    onError: (err) => {
-      const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_update_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
-    },
-  });
+  const code_files = useMemo(() => {
+    if (typeof agent === 'string') {
+      return [];
+    }
 
-  const create = useCreateAgentMutation({
-    onSuccess: (data) => {
-      setCurrentAgentId(data.id);
-      showToast({
-        message: `${localize('com_assistants_create_success ')} ${
-          data.name ?? localize('com_ui_agent')
-        }`,
-      });
-    },
-    onError: (err) => {
-      const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
-    },
-  });
+    if (agent?.id !== agent_id) {
+      return [];
+    }
+
+    if (agent.code_files) {
+      return agent.code_files;
+    }
+
+    const _agent = processAgentOption({
+      agent,
+      fileMap,
+    });
+    return _agent.code_files ?? [];
+  }, [agent, agent_id, fileMap]);
 
   const handleAddActions = useCallback(() => {
     if (!agent_id) {
@@ -144,18 +155,10 @@ export default function AgentConfig({
   }, [agent_id, setActivePanel, showToast, localize]);
 
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
+  let Icon: IconComponentTypes | null | undefined;
   let endpointType: EModelEndpoint | undefined;
   let endpointIconURL: string | undefined;
   let iconKey: string | undefined;
-  let Icon:
-    | React.ComponentType<
-        React.SVGProps<SVGSVGElement> & {
-          endpoint: string;
-          endpointType: EModelEndpoint | undefined;
-          iconURL: string | undefined;
-        }
-      >
-    | undefined;
 
   if (providerValue !== undefined) {
     endpointType = getEndpointField(endpointsConfig, providerValue as string, 'type');
@@ -169,26 +172,14 @@ export default function AgentConfig({
     Icon = icons[iconKey];
   }
 
-  const renderSaveButton = () => {
-    if (create.isLoading || update.isLoading) {
-      return <Spinner className="icon-md" aria-hidden="true" />;
-    }
-
-    if (agent_id) {
-      return localize('com_ui_save');
-    }
-
-    return localize('com_ui_create');
-  };
-
   return (
     <>
-      <div className="h-auto bg-white px-4 pb-8 pt-3 dark:bg-transparent">
+      <div className="h-auto bg-white px-4 pt-3 dark:bg-transparent">
         {/* Avatar & Name */}
         <div className="mb-4">
           <AgentAvatar
-            createMutation={create}
             agent_id={agent_id}
+            createMutation={createMutation}
             avatar={agent?.['avatar'] ?? null}
           />
           <label className={labelClass} htmlFor="name">
@@ -243,41 +234,9 @@ export default function AgentConfig({
           />
         </div>
         {/* Instructions */}
-        <div className="mb-6">
-          <label className={labelClass} htmlFor="instructions">
-            {localize('com_ui_instructions')}
-          </label>
-          <Controller
-            name="instructions"
-            control={control}
-            render={({ field, fieldState: { error } }) => (
-              <>
-                <textarea
-                  {...field}
-                  value={field.value ?? ''}
-                  maxLength={32768}
-                  className={cn(inputClass, 'min-h-[100px] resize-y')}
-                  id="instructions"
-                  placeholder={localize('com_agents_instructions_placeholder')}
-                  rows={3}
-                  aria-label="Agent instructions"
-                  aria-required="true"
-                  aria-invalid={error ? 'true' : 'false'}
-                />
-                {error && (
-                  <span
-                    className="text-sm text-red-500 transition duration-300 ease-in-out"
-                    role="alert"
-                  >
-                    {localize('com_ui_field_required')}
-                  </span>
-                )}
-              </>
-            )}
-          />
-        </div>
+        <Instructions />
         {/* Model and Provider */}
-        <div className="mb-6">
+        <div className="mb-4">
           <label className={labelClass} htmlFor="provider">
             {localize('com_ui_model')} <span className="text-red-500">*</span>
           </label>
@@ -293,25 +252,39 @@ export default function AgentConfig({
                 <div className="shadow-stroke relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-white">
                   <Icon
                     className="h-2/3 w-2/3"
-                    endpoint={provider as string}
+                    endpoint={providerValue as string}
                     endpointType={endpointType}
                     iconURL={endpointIconURL}
                   />
                 </div>
               )}
-              <span>{model != null ? model : localize('com_ui_select_model')}</span>
+              <span>{model != null && model ? model : localize('com_ui_select_model')}</span>
             </div>
           </button>
         </div>
-        <CapabilitiesForm
-          codeEnabled={codeEnabled}
-          agentsConfig={agentsConfig}
-          retrievalEnabled={false}
-        />
-        {/* File Search */}
-        {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+        {(codeEnabled ||
+          fileSearchEnabled ||
+          artifactsEnabled ||
+          ocrEnabled ||
+          webSearchEnabled) && (
+          <div className="mb-4 flex w-full flex-col items-start gap-3">
+            <label className="text-token-text-primary block font-medium">
+              {localize('com_assistants_capabilities')}
+            </label>
+            {/* Code Execution */}
+            {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
+            {/* Web Search */}
+            {webSearchEnabled && <SearchForm />}
+            {/* File Context (OCR) */}
+            {ocrEnabled && <FileContext agent_id={agent_id} files={context_files} />}
+            {/* Artifacts */}
+            {artifactsEnabled && <Artifacts />}
+            {/* File Search */}
+            {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+          </div>
+        )}
         {/* Agent Tools & Actions */}
-        <div className="mb-6">
+        <div className="mb-4">
           <label className={labelClass}>
             {`${toolsEnabled === true ? localize('com_ui_tools') : ''}
               ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
@@ -343,7 +316,7 @@ export default function AgentConfig({
                 <button
                   type="button"
                   onClick={() => setShowToolDialog(true)}
-                  className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                  className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
                   aria-haspopup="dialog"
                 >
                   <div className="flex w-full items-center justify-center gap-2">
@@ -356,7 +329,7 @@ export default function AgentConfig({
                   type="button"
                   disabled={!agent_id}
                   onClick={handleAddActions}
-                  className="btn btn-neutral border-token-border-light relative h-8 w-full rounded-lg font-medium"
+                  className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
                   aria-haspopup="dialog"
                 >
                   <div className="flex w-full items-center justify-center gap-2">
@@ -366,31 +339,6 @@ export default function AgentConfig({
               )}
             </div>
           </div>
-        </div>
-        {/* Context Button */}
-        <div className="flex items-center justify-end gap-2">
-          <DeleteButton
-            agent_id={agent_id}
-            setCurrentAgentId={setCurrentAgentId}
-            createMutation={create}
-          />
-          {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN) && (
-            <ShareAgent
-              agent_id={agent_id}
-              agentName={agent?.name ?? ''}
-              projectIds={agent?.projectIds ?? []}
-              isCollaborative={agent?.isCollaborative}
-            />
-          )}
-          {/* Submit Button */}
-          <button
-            className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
-            type="submit"
-            disabled={create.isLoading || update.isLoading}
-            aria-busy={create.isLoading || update.isLoading}
-          >
-            {renderSaveButton()}
-          </button>
         </div>
       </div>
       <ToolSelectDialog

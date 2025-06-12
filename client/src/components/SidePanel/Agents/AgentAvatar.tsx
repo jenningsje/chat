@@ -135,10 +135,6 @@ function Avatar({
       formData.append('file', input, input.name);
       formData.append('agent_id', createMutation.data.id);
 
-      if (typeof createMutation.data.avatar === 'object') {
-        formData.append('avatar', JSON.stringify(createMutation.data.avatar));
-      }
-
       uploadAvatar({
         agent_id: createMutation.data.id,
         postCreation: true,
@@ -175,7 +171,7 @@ function Avatar({
     } else {
       const megabytes = sizeLimit ? formatBytes(sizeLimit) : 2;
       showToast({
-        message: localize('com_ui_upload_invalid_var', megabytes + ''),
+        message: localize('com_ui_upload_invalid_var', { 0: megabytes + '' }),
         status: 'error',
       });
     }

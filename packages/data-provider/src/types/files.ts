@@ -4,10 +4,13 @@ export enum FileSources {
   local = 'local',
   firebase = 'firebase',
   azure = 'azure',
+  azure_blob = 'azure_blob',
   openai = 'openai',
   s3 = 's3',
   vectordb = 'vectordb',
   execute_code = 'execute_code',
+  mistral_ocr = 'mistral_ocr',
+  text = 'text',
 }
 
 export const checkOpenAIStorage = (source: string) =>
@@ -69,6 +72,7 @@ export type TFile = {
   height?: number;
   expiresAt?: string | Date;
   preview?: string;
+  metadata?: { fileIdentifier?: string };
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };
@@ -127,6 +131,7 @@ export type BatchFile = {
   filepath: string;
   embedded: boolean;
   source: FileSources;
+  temp_file_id?: string;
 };
 
 export type DeleteFilesBody = {

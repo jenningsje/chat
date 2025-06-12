@@ -1,32 +1,59 @@
-const { FileSources, EModelEndpoint, getConfigDefaults } = require('librechat-data-provider');
-const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
+const {
+  FileSources,
+  loadOCRConfig,
+  processMCPEnv,
+  EModelEndpoint,
+  loadMemoryConfig,
+  getConfigDefaults,
+  loadWebSearchConfig,
+} = require('librechat-data-provider');
+const { agentsConfigSetup } = require('@librechat/api');
+const {
+  checkHealth,
+  checkConfig,
+  checkVariables,
+  checkAzureVariables,
+  checkWebSearchConfig,
+} = require('./start/checks');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
+const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadDefaultInterface } = require('./start/interface');
+const { loadTurnstileConfig } = require('./start/turnstile');
 const { azureConfigSetup } = require('./start/azureOpenAI');
+const { processModelSpecs } = require('./start/modelSpecs');
+const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./ToolService');
-const { initializeRoles } = require('~/models/Role');
-const { cleanup } = require('./cleanup');
+const { isEnabled } = require('~/server/utils');
+const { initializeRoles } = require('~/models');
+const { getMCPManager } = require('~/config');
 const paths = require('~/config/paths');
 
 /**
- *
  * Loads custom config and initializes app-wide variables.
  * @function AppService
  * @param {Express.Application} app - The Express application object.
  */
 const AppService = async (app) => {
-  cleanup();
   await initializeRoles();
-  /** @type {TCustomConfig}*/
+  /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
 
+  const ocr = loadOCRConfig(config.ocr);
+  const webSearch = loadWebSearchConfig(config.webSearch);
+  checkWebSearchConfig(webSearch);
+  const memory = loadMemoryConfig(config.memory);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
+  const startBalance = process.env.START_BALANCE;
+  const balance = config.balance ?? {
+    enabled: isEnabled(process.env.CHECK_BALANCE),
+    startBalance: startBalance ? parseInt(startBalance, 10) : undefined,
+  };
   const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
 
   process.env.CDN_PROVIDER = fileStrategy;
@@ -36,21 +63,35 @@ const AppService = async (app) => {
 
   if (fileStrategy === FileSources.firebase) {
     initializeFirebase();
+  } else if (fileStrategy === FileSources.azure_blob) {
+    initializeAzureBlobService();
+  } else if (fileStrategy === FileSources.s3) {
+    initializeS3();
   }
 
-  /** @type {Record<string, FunctionTool} */
+  /** @type {Record<string, FunctionTool>} */
   const availableTools = loadAndFormatTools({
-    directory: paths.structuredTools,
     adminFilter: filteredTools,
     adminIncluded: includedTools,
+    directory: paths.structuredTools,
   });
+
+  if (config.mcpServers != null) {
+    const mcpManager = getMCPManager();
+    await mcpManager.initializeMCP(config.mcpServers, processMCPEnv);
+    await mcpManager.mapAvailableTools(availableTools);
+  }
 
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
   const interfaceConfig = await loadDefaultInterface(config, configDefaults);
+  const turnstileConfig = loadTurnstileConfig(config, configDefaults);
 
   const defaultLocals = {
+    ocr,
     paths,
+    memory,
+    webSearch,
     fileStrategy,
     socialLogins,
     filteredTools,
@@ -58,10 +99,17 @@ const AppService = async (app) => {
     availableTools,
     imageOutputType,
     interfaceConfig,
+    turnstileConfig,
+    balance,
   };
 
+  const agentsDefaults = agentsConfigSetup(config);
+
   if (!Object.keys(config).length) {
-    app.locals = defaultLocals;
+    app.locals = {
+      ...defaultLocals,
+      [EModelEndpoint.agents]: agentsDefaults,
+    };
     return;
   }
 
@@ -96,6 +144,8 @@ const AppService = async (app) => {
     );
   }
 
+  endpointLocals[EModelEndpoint.agents] = agentsConfigSetup(config, agentsDefaults);
+
   const endpointKeys = [
     EModelEndpoint.openAI,
     EModelEndpoint.google,
@@ -112,9 +162,9 @@ const AppService = async (app) => {
 
   app.locals = {
     ...defaultLocals,
-    modelSpecs: config.modelSpecs,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
+    modelSpecs: processModelSpecs(endpoints, config.modelSpecs, interfaceConfig),
     ...endpointLocals,
   };
 };

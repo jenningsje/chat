@@ -25,6 +25,8 @@ export enum QueryKeys {
   files = 'files',
   fileConfig = 'fileConfig',
   tools = 'tools',
+  toolAuth = 'toolAuth',
+  toolCalls = 'toolCalls',
   agentTools = 'agentTools',
   actions = 'actions',
   assistantDocs = 'assistantDocs',
@@ -44,6 +46,8 @@ export enum QueryKeys {
   health = 'health',
   userTerms = 'userTerms',
   banner = 'banner',
+  /* Memories */
+  memories = 'memories',
 }
 
 export enum MutationKeys {
@@ -51,7 +55,9 @@ export enum MutationKeys {
   fileDelete = 'fileDelete',
   updatePreset = 'updatePreset',
   deletePreset = 'deletePreset',
+  loginUser = 'loginUser',
   logoutUser = 'logoutUser',
+  refreshToken = 'refreshToken',
   avatarUpload = 'avatarUpload',
   speechToText = 'speechToText',
   textToSpeech = 'textToSpeech',
@@ -61,6 +67,10 @@ export enum MutationKeys {
   updateAgentAction = 'updateAgentAction',
   deleteAction = 'deleteAction',
   deleteAgentAction = 'deleteAgentAction',
+  revertAgentVersion = 'revertAgentVersion',
   deleteUser = 'deleteUser',
   updateRole = 'updateRole',
+  enableTwoFactor = 'enableTwoFactor',
+  verifyTwoFactor = 'verifyTwoFactor',
+  updateMemoryPreferences = 'updateMemoryPreferences',
 }
